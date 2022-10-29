@@ -1,12 +1,17 @@
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 public class Main {
-    public static void main(String[] args) throws InterruptedException {
-        long startTs = System.currentTimeMillis(); // start time
-        List<Thread> threads = new ArrayList<>();
-        Runnable countInterval = () -> {
+
+    static class CountIntervalCallable implements Callable<String> {
+
+        @Override
+        public String call() throws Exception {
             String text = generateText("aab", 30_000);
             int maxSize = 0;
             for (int i = 0; i < text.length(); i++) {
@@ -26,22 +31,41 @@ public class Main {
                     }
                 }
             }
-            System.out.println(text.substring(0, 100) + " -> " + maxSize);
-        };
+            return (text.substring(0, 100) + " -> " + maxSize);
+        }
+    }
+
+
+    public static void main(String[] args) throws Exception {
+        long startTs = System.currentTimeMillis(); // start time
+        List<Future> futureList = new ArrayList<>();
+        List<String> resultList = new ArrayList<>();
+
+        // Создаём пул потоков фиксированного размера
+        final ExecutorService threadPool = Executors.newFixedThreadPool(25);
 
         for (int i = 0; i < 25; i++) {
-            Thread thread = new Thread(countInterval);
-            threads.add(thread);
-            thread.start();
+            Callable<String> countInterval = new CountIntervalCallable();
+            // Отправляем задачу
+            final Future<String> futureTask = threadPool.submit(countInterval);
+            futureList.add(futureTask);
         }
 
-        for (Thread thread : threads) {
-            thread.join(); // зависаем, ждём когда поток объект которого лежит в thread завершится
+        for (Future<String> future : futureList) {
+            // Считываем строку и записываем в resultList
+            final String text = future.get();
+            resultList.add(text);
+            System.out.println(text);
         }
+
+        int maxSize = resultList.stream().mapToInt(str->Integer.parseInt(str.split("->")[1].trim())).max().getAsInt();
+        System.out.println(String.format("Max interval equals %d",maxSize));
 
         long endTs = System.currentTimeMillis(); // end time
 
         System.out.println("Time: " + (endTs - startTs) + "ms");
+
+        threadPool.shutdown();
     }
 
     public static String generateText(String letters, int length) {
